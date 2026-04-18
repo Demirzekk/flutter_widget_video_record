@@ -21,6 +21,9 @@ class WidgetRecorderController {
   bool _isRecording = false;
   String? _currentOutputPath;
 
+  String? _tempVideoPath;
+  String? _tempAudioPath;
+
   WidgetRecorderController({
     this.fps = 30,
     this.pixelRatio = 1.0,
@@ -51,22 +54,21 @@ class WidgetRecorderController {
       return false;
     }
 
-    // Determine dimensions from the RenderRepaintBoundary
+    // Determine exact dimensions by capturing a dummy frame
     final boundary = boundaryKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
     if (boundary == null) {
       throw Exception("Widget is not rendered yet. Cannot start recording.");
     }
-    final size = boundary.size;
-    final int width = (size.width * pixelRatio).toInt();
-    final int height = (size.height * pixelRatio).toInt();
     
-    // Ensure width and height are even numbers (required by many h264 encoders)
-    final int safeWidth = width % 2 == 0 ? width : width - 1;
-    final int safeHeight = height % 2 == 0 ? height : height - 1;
+    final dummyImage = await boundary.toImage(pixelRatio: pixelRatio);
+    final int actualWidth = dummyImage.width;
+    final int actualHeight = dummyImage.height;
+    dummyImage.dispose(); // free memory
 
     final tempDir = await getTemporaryDirectory();
     final uuid = const Uuid().v4();
-    final tempAudioPath = '${tempDir.path}/audio_$uuid.m4a';
+    _tempAudioPath = '${tempDir.path}/audio_$uuid.m4a';
+    _tempVideoPath = '${tempDir.path}/video_temp_$uuid.mp4';
     _currentOutputPath = outputPath ?? '${tempDir.path}/video_$uuid.mp4';
 
     // Initialize engines
@@ -78,19 +80,18 @@ class WidgetRecorderController {
     
     _audioEngine = AudioEngine();
     _muxingEngine = MuxingEngine(
-      width: safeWidth,
-      height: safeHeight,
+      width: actualWidth,
+      height: actualHeight,
       fps: fps,
     );
 
     // 1. Start audio recording
-    await _audioEngine!.startRecording(tempAudioPath);
+    await _audioEngine!.startRecording(_tempAudioPath!);
 
-    // 2. Start muxing
-    await _muxingEngine!.startMuxing(
+    // 2. Start video encoding via pipe
+    await _muxingEngine!.startVideoEncoding(
       frameStream: _captureEngine!.frameStream,
-      audioPath: tempAudioPath,
-      outputPath: _currentOutputPath!,
+      tempVideoPath: _tempVideoPath!,
     );
 
     // 3. Start capturing frames
@@ -104,20 +105,36 @@ class WidgetRecorderController {
   Future<String?> stop() async {
     if (!_isRecording) return null;
 
+    debugPrint("--- STOP RECORDING INITIATED ---");
     // 1. Stop capturing frames
+    debugPrint("Stopping capture engine...");
     _captureEngine?.stop();
 
-    // 2. Stop audio recording
+    // 2. Stop audio recording (Finalizes the audio file)
+    debugPrint("Stopping audio engine...");
     await _audioEngine?.stopRecording();
 
-    // 3. Stop muxing (this will close the pipe and wait for FFmpeg to finish)
-    await _muxingEngine?.stopMuxing();
+    // 3. Stop video encoding (Closes the pipe and waits for FFmpeg to finish encoding video)
+    debugPrint("Stopping video encoding...");
+    await _muxingEngine?.stopVideoEncoding();
+
+    // 4. Combine Video and Audio
+    if (_tempVideoPath != null && _tempAudioPath != null && _currentOutputPath != null) {
+      debugPrint("Combining video and audio...");
+      await _muxingEngine?.combineVideoAndAudio(
+        videoPath: _tempVideoPath!,
+        audioPath: _tempAudioPath!,
+        outputPath: _currentOutputPath!,
+      );
+    }
 
     // Clean up
+    debugPrint("Cleaning up engines...");
     _captureEngine?.dispose();
     _audioEngine?.dispose();
 
     _isRecording = false;
+    debugPrint("--- STOP RECORDING COMPLETE --- Output: $_currentOutputPath");
     return _currentOutputPath;
   }
 }

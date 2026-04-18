@@ -11,7 +11,11 @@ class CaptureEngine {
   
   Timer? _timer;
   bool _isCapturing = false;
+  bool _isProcessingFrame = false; // Guard: prevents frame pile-up
   final StreamController<Uint8List> _frameStreamController = StreamController<Uint8List>.broadcast();
+
+  int _capturedFrames = 0;
+  int _skippedFrames = 0;
 
   CaptureEngine({
     required this.boundaryKey,
@@ -21,10 +25,14 @@ class CaptureEngine {
 
   Stream<Uint8List> get frameStream => _frameStreamController.stream;
   bool get isCapturing => _isCapturing;
+  int get capturedFrames => _capturedFrames;
+  int get skippedFrames => _skippedFrames;
 
   void start() {
     if (_isCapturing) return;
     _isCapturing = true;
+    _capturedFrames = 0;
+    _skippedFrames = 0;
 
     final interval = Duration(milliseconds: 1000 ~/ fps);
     _timer = Timer.periodic(interval, (timer) {
@@ -34,7 +42,9 @@ class CaptureEngine {
 
   void stop() {
     _timer?.cancel();
+    _timer = null;
     _isCapturing = false;
+    debugPrint("CaptureEngine stats: captured=$_capturedFrames, skipped=$_skippedFrames");
   }
 
   void dispose() {
@@ -43,26 +53,34 @@ class CaptureEngine {
   }
 
   Future<void> _captureFrame() async {
+    // CRITICAL: If the previous frame is still being processed, SKIP this tick.
+    // This prevents frame pile-up which is the #1 cause of UI jank.
+    if (_isProcessingFrame) {
+      _skippedFrames++;
+      return;
+    }
+
+    _isProcessingFrame = true;
     try {
       final boundary = boundaryKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
-      if (boundary == null) return;
-
-      if (boundary.debugNeedsPaint) {
-        // We might want to wait or just skip if it's not ready, 
-        // but for high fps video, skipping a frame or repeating the last one is normal.
+      if (boundary == null || !_isCapturing) {
+        _isProcessingFrame = false;
+        return;
       }
 
+      // toImage() is GPU readback — this is the expensive part.
       final image = await boundary.toImage(pixelRatio: pixelRatio);
-      // Using rawRgba is significantly faster than png.
       final byteData = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+      image.dispose();
       
       if (byteData != null && _isCapturing) {
         _frameStreamController.add(byteData.buffer.asUint8List());
+        _capturedFrames++;
       }
-      
-      image.dispose();
     } catch (e) {
       debugPrint("Frame capture error: $e");
+    } finally {
+      _isProcessingFrame = false;
     }
   }
 }

@@ -36,6 +36,9 @@ dependencies:
   cupertino_icons: ^1.0.8
   flutter_widget_video_record:
     path: ..
+  video_player: ^2.11.1
+  chewie: ^1.13.1
+  path_provider: ^2.1.5
 
 dev_dependencies:
   flutter_test:
