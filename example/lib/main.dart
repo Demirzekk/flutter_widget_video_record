@@ -33,7 +33,7 @@ class _DemoPageState extends State<DemoPage>
     with SingleTickerProviderStateMixin {
   late WidgetRecorderController _controller;
   late final AnimationController _animController;
-  String? _videoPath;
+
   bool _isControllerInitialized = false;
 
   @override
@@ -69,9 +69,7 @@ class _DemoPageState extends State<DemoPage>
   void _toggleRecording() async {
     if (_controller.isRecording) {
       final path = await _controller.stop();
-      setState(() {
-        _videoPath = path;
-      });
+      setState(() {});
       if (mounted && path != null) {
         ScaffoldMessenger.of(
           context,
