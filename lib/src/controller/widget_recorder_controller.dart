@@ -11,8 +11,8 @@ import '../processing/muxing_engine.dart';
 class WidgetRecorderController {
   final GlobalKey boundaryKey = GlobalKey();
   
-  final int fps;
-  final double pixelRatio;
+  int fps;
+  double pixelRatio;
 
   CaptureEngine? _captureEngine;
   AudioEngine? _audioEngine;

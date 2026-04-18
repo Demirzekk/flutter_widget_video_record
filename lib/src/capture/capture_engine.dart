@@ -9,13 +9,18 @@ class CaptureEngine {
   final int fps;
   final double pixelRatio;
   
-  Timer? _timer;
+  Timer? _captureTimer;
+  Timer? _pushTimer;
+  final Stopwatch _stopwatch = Stopwatch();
+
   bool _isCapturing = false;
-  bool _isProcessingFrame = false; // Guard: prevents frame pile-up
+  bool _isProcessingFrame = false; 
   final StreamController<Uint8List> _frameStreamController = StreamController<Uint8List>.broadcast();
 
+  Uint8List? _lastFrameBytes;
   int _capturedFrames = 0;
   int _skippedFrames = 0;
+  int _pushedFrames = 0;
 
   CaptureEngine({
     required this.boundaryKey,
@@ -33,18 +38,33 @@ class CaptureEngine {
     _isCapturing = true;
     _capturedFrames = 0;
     _skippedFrames = 0;
+    _pushedFrames = 0;
+    _lastFrameBytes = null;
 
-    final interval = Duration(milliseconds: 1000 ~/ fps);
-    _timer = Timer.periodic(interval, (timer) {
+    _stopwatch.reset();
+    _stopwatch.start();
+
+    // 1. Capture Loop: Attempts to capture frames from the UI independently
+    final captureInterval = Duration(milliseconds: 1000 ~/ fps);
+    _captureTimer = Timer.periodic(captureInterval, (timer) {
       _captureFrame();
+    });
+
+    // 2. Sync Push Loop: Guarantees EXACTLY `fps` frames per second are pushed
+    // so the video length perfectly matches real time.
+    _pushTimer = Timer.periodic(const Duration(milliseconds: 5), (timer) {
+      _syncPushFrame();
     });
   }
 
   void stop() {
-    _timer?.cancel();
-    _timer = null;
+    _captureTimer?.cancel();
+    _pushTimer?.cancel();
+    _captureTimer = null;
+    _pushTimer = null;
+    _stopwatch.stop();
     _isCapturing = false;
-    debugPrint("CaptureEngine stats: captured=$_capturedFrames, skipped=$_skippedFrames");
+    debugPrint("CaptureEngine stats: captured=$_capturedFrames, skipped=$_skippedFrames, pushed=$_pushedFrames");
   }
 
   void dispose() {
@@ -52,9 +72,27 @@ class CaptureEngine {
     _frameStreamController.close();
   }
 
+  void _syncPushFrame() {
+    if (!_isCapturing) return;
+
+    final elapsedMs = _stopwatch.elapsedMilliseconds;
+    final targetFrames = (elapsedMs * fps) ~/ 1000;
+
+    // Push frames if we are behind the real-time target
+    while (_pushedFrames < targetFrames) {
+      if (_lastFrameBytes != null) {
+        _frameStreamController.add(_lastFrameBytes!);
+        _pushedFrames++;
+      } else {
+        // If we haven't captured the first frame yet, wait.
+        // Once the first frame comes in, it will catch up and duplicate it for the initial milliseconds.
+        break;
+      }
+    }
+  }
+
   Future<void> _captureFrame() async {
-    // CRITICAL: If the previous frame is still being processed, SKIP this tick.
-    // This prevents frame pile-up which is the #1 cause of UI jank.
+    // Prevent UI thread pile-up if the previous GPU readback hasn't finished
     if (_isProcessingFrame) {
       _skippedFrames++;
       return;
@@ -68,13 +106,13 @@ class CaptureEngine {
         return;
       }
 
-      // toImage() is GPU readback — this is the expensive part.
+      // GPU readback — expensive
       final image = await boundary.toImage(pixelRatio: pixelRatio);
       final byteData = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
       image.dispose();
       
       if (byteData != null && _isCapturing) {
-        _frameStreamController.add(byteData.buffer.asUint8List());
+        _lastFrameBytes = byteData.buffer.asUint8List();
         _capturedFrames++;
       }
     } catch (e) {
