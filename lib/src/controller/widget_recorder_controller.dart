@@ -137,4 +137,16 @@ class WidgetRecorderController {
     debugPrint("--- STOP RECORDING COMPLETE --- Output: $_currentOutputPath");
     return _currentOutputPath;
   }
+
+  Future<void> pause() async {
+    if (!_isRecording) return;
+    _captureEngine?.pause();
+    await _audioEngine?.pause();
+  }
+
+  Future<void> resume() async {
+    if (!_isRecording) return;
+    _captureEngine?.resume();
+    await _audioEngine?.resume();
+  }
 }
