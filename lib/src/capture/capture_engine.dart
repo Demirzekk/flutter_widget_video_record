@@ -8,14 +8,15 @@ class CaptureEngine {
   final GlobalKey boundaryKey;
   final int fps;
   final double pixelRatio;
-  
+
   Timer? _captureTimer;
   Timer? _pushTimer;
   final Stopwatch _stopwatch = Stopwatch();
 
   bool _isCapturing = false;
-  bool _isProcessingFrame = false; 
-  final StreamController<Uint8List> _frameStreamController = StreamController<Uint8List>.broadcast();
+  bool _isProcessingFrame = false;
+  final StreamController<Uint8List> _frameStreamController =
+      StreamController<Uint8List>.broadcast();
 
   Uint8List? _lastFrameBytes;
   int _capturedFrames = 0;
@@ -64,7 +65,37 @@ class CaptureEngine {
     _pushTimer = null;
     _stopwatch.stop();
     _isCapturing = false;
-    debugPrint("CaptureEngine stats: captured=$_capturedFrames, skipped=$_skippedFrames, pushed=$_pushedFrames");
+    debugPrint(
+      "CaptureEngine stats: captured=$_capturedFrames, skipped=$_skippedFrames, pushed=$_pushedFrames",
+    );
+  }
+
+  void pause() {
+    if (!_isCapturing) return;
+    _isCapturing = false;
+    _stopwatch.stop();
+    _captureTimer?.cancel();
+    _pushTimer?.cancel();
+    _captureTimer = null;
+    _pushTimer = null;
+    debugPrint("CaptureEngine PAUSED");
+  }
+
+  void resume() {
+    if (_isCapturing) return;
+    _isCapturing = true;
+    _stopwatch.start();
+
+    // Restart timers exactly as in start()
+    final captureInterval = Duration(milliseconds: 1000 ~/ fps);
+    _captureTimer = Timer.periodic(captureInterval, (timer) {
+      _captureFrame();
+    });
+
+    _pushTimer = Timer.periodic(const Duration(milliseconds: 5), (timer) {
+      _syncPushFrame();
+    });
+    debugPrint("CaptureEngine RESUMED");
   }
 
   void dispose() {
@@ -100,7 +131,9 @@ class CaptureEngine {
 
     _isProcessingFrame = true;
     try {
-      final boundary = boundaryKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+      final boundary =
+          boundaryKey.currentContext?.findRenderObject()
+              as RenderRepaintBoundary?;
       if (boundary == null || !_isCapturing) {
         _isProcessingFrame = false;
         return;
@@ -108,9 +141,11 @@ class CaptureEngine {
 
       // GPU readback — expensive
       final image = await boundary.toImage(pixelRatio: pixelRatio);
-      final byteData = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+      final byteData = await image.toByteData(
+        format: ui.ImageByteFormat.rawRgba,
+      );
       image.dispose();
-      
+
       if (byteData != null && _isCapturing) {
         _lastFrameBytes = byteData.buffer.asUint8List();
         _capturedFrames++;
