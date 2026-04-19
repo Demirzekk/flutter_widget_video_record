@@ -21,6 +21,14 @@ class AudioEngine {
     return path; // Returns the recorded file path
   }
 
+  Future<void> pause() async {
+    await _audioRecorder.pause();
+  }
+
+  Future<void> resume() async {
+    await _audioRecorder.resume();
+  }
+
   void dispose() {
     _audioRecorder.dispose();
   }
