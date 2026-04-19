@@ -67,34 +67,6 @@ class CaptureEngine {
     debugPrint("CaptureEngine stats: captured=$_capturedFrames, skipped=$_skippedFrames, pushed=$_pushedFrames");
   }
 
-  void pause() {
-    if (!_isCapturing) return;
-    _isCapturing = false;
-    _stopwatch.stop();
-    _captureTimer?.cancel();
-    _pushTimer?.cancel();
-    _captureTimer = null;
-    _pushTimer = null;
-    debugPrint("CaptureEngine PAUSED");
-  }
-
-  void resume() {
-    if (_isCapturing) return;
-    _isCapturing = true;
-    _stopwatch.start();
-
-    // Restart timers exactly as in start()
-    final captureInterval = Duration(milliseconds: 1000 ~/ fps);
-    _captureTimer = Timer.periodic(captureInterval, (timer) {
-      _captureFrame();
-    });
-
-    _pushTimer = Timer.periodic(const Duration(milliseconds: 5), (timer) {
-      _syncPushFrame();
-    });
-    debugPrint("CaptureEngine RESUMED");
-  }
-
   void dispose() {
     stop();
     _frameStreamController.close();
