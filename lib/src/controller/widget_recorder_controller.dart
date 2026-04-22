@@ -11,8 +11,8 @@ import '../processing/muxing_engine.dart';
 class WidgetRecorderController {
   final GlobalKey boundaryKey = GlobalKey();
   
-  final int fps;
-  final double pixelRatio;
+  int fps;
+  double pixelRatio;
 
   CaptureEngine? _captureEngine;
   AudioEngine? _audioEngine;
@@ -136,5 +136,17 @@ class WidgetRecorderController {
     _isRecording = false;
     debugPrint("--- STOP RECORDING COMPLETE --- Output: $_currentOutputPath");
     return _currentOutputPath;
+  }
+
+  Future<void> pause() async {
+    if (!_isRecording) return;
+    _captureEngine?.pause();
+    await _audioEngine?.pause();
+  }
+
+  Future<void> resume() async {
+    if (!_isRecording) return;
+    _captureEngine?.resume();
+    await _audioEngine?.resume();
   }
 }
