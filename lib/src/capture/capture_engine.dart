@@ -51,7 +51,6 @@ class CaptureEngine {
     });
 
     // 2. Sync Push Loop: Guarantees EXACTLY `fps` frames per second are pushed
-    // so the video length perfectly matches real time.
     _pushTimer = Timer.periodic(const Duration(milliseconds: 5), (timer) {
       _syncPushFrame();
     });
